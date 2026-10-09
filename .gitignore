@@ -1,0 +1,5 @@
+node_modules/
+# Credenciales en texto plano: NUNCA subir al repositorio
+privado/
+*.log
+.claude/

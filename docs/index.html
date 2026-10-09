@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es-CL">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Lector QR</title>
+  <meta name="description" content="Lector de códigos QR de pallets con registro en Google Sheets.">
+  <meta name="theme-color" content="#0f5e66">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Lector QR">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="referrer" content="no-referrer">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="barra">
+    <h1 class="barra__titulo">Lector QR</h1>
+    <div class="barra__usuario" id="barra-usuario" hidden>
+      <span id="nombre-usuario" class="chip"></span>
+      <button type="button" id="btn-salir" class="boton boton--secundario boton--chico">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <div id="aviso-offline" class="aviso-offline" role="status" hidden>
+    Sin conexión: no se registrarán lecturas.
+  </div>
+
+  <main>
+    <!-- ===== Pantalla de acceso ===== -->
+    <section id="pantalla-acceso" class="pantalla" aria-labelledby="titulo-acceso">
+      <h2 id="titulo-acceso">Ingresar</h2>
+      <form id="form-acceso" novalidate>
+        <label for="campo-url">URL del servidor</label>
+        <input id="campo-url" name="url" type="url" inputmode="url" autocomplete="off"
+               autocapitalize="off" spellcheck="false" required
+               placeholder="https://script.google.com/macros/s/…/exec">
+        <p class="ayuda">Pega la dirección que te enviaron por WhatsApp.</p>
+
+        <label for="campo-usuario">Usuario</label>
+        <input id="campo-usuario" name="usuario" type="text" autocomplete="username"
+               autocapitalize="off" spellcheck="false" required maxlength="50">
+
+        <label for="campo-clave">Contraseña</label>
+        <div class="clave">
+          <input id="campo-clave" name="clave" type="password" autocomplete="current-password" required maxlength="200">
+          <button type="button" id="btn-ver-clave" class="boton boton--secundario boton--chico"
+                  aria-pressed="false" aria-controls="campo-clave">Ver</button>
+        </div>
+
+        <p id="msg-acceso" class="mensaje" role="alert" hidden></p>
+        <button type="submit" id="btn-entrar" class="boton boton--primario">Entrar</button>
+      </form>
+    </section>
+
+    <!-- ===== Pantalla del lector ===== -->
+    <section id="pantalla-lector" class="pantalla" aria-labelledby="titulo-lector" hidden>
+      <h2 id="titulo-lector" class="solo-lector-pantalla">Escanear</h2>
+
+      <div class="lector-marco">
+        <div id="lector" class="lector"></div>
+        <p id="msg-camara" class="lector-msg" hidden></p>
+      </div>
+
+      <div class="fila-botones">
+        <button type="button" id="btn-camara" class="boton boton--secundario">Detener cámara</button>
+        <button type="button" id="btn-linterna" class="boton boton--secundario" aria-pressed="false" hidden>Linterna</button>
+      </div>
+
+      <p id="resultado" class="resultado" role="status" aria-live="assertive" aria-atomic="true">
+        Apunta la cámara al código QR del pallet.
+      </p>
+
+      <label for="observacion-rapida">Observación (opcional, para la próxima lectura)</label>
+      <input id="observacion-rapida" type="text" maxlength="500" autocomplete="off">
+
+      <details id="manual" class="tarjeta">
+        <summary>Ingreso manual (QR dañado)</summary>
+        <form id="form-manual" novalidate>
+          <label for="manual-pedido">N° pedido</label>
+          <input id="manual-pedido" type="text" maxlength="100" autocomplete="off" required>
+          <label for="manual-producto">Código producto</label>
+          <input id="manual-producto" type="text" maxlength="100" autocomplete="off" required>
+          <label for="manual-pallet">N° pallet</label>
+          <input id="manual-pallet" type="text" maxlength="100" autocomplete="off" required>
+          <label for="manual-observacion">Observación (opcional)</label>
+          <textarea id="manual-observacion" rows="2" maxlength="500"></textarea>
+          <button type="submit" id="btn-registrar-manual" class="boton boton--primario">Registrar</button>
+        </form>
+      </details>
+
+      <section class="tarjeta" aria-labelledby="titulo-ultimas">
+        <h3 id="titulo-ultimas">Últimas lecturas</h3>
+        <ol id="lista-ultimas" class="lista-ultimas"></ol>
+        <p id="sin-lecturas" class="ayuda">Aún no hay lecturas en esta sesión.</p>
+      </section>
+
+      <section id="panel-admin" class="tarjeta" aria-labelledby="titulo-admin" hidden>
+        <h3 id="titulo-admin">Administración</h3>
+        <div id="resumen" aria-live="polite"></div>
+        <div class="fila-botones">
+          <button type="button" id="btn-resumen" class="boton boton--secundario">Actualizar resumen</button>
+          <button type="button" id="btn-descargar" class="boton boton--secundario">Descargar copia completa</button>
+        </div>
+        <p id="msg-admin" class="mensaje" role="status" hidden></p>
+      </section>
+    </section>
+  </main>
+
+  <!-- ===== Diálogo de lectura duplicada ===== -->
+  <dialog id="dlg-duplicado" aria-labelledby="dup-titulo">
+    <form id="form-duplicado" method="dialog" novalidate>
+      <h2 id="dup-titulo">Lectura ya registrada</h2>
+      <p id="dup-texto"></p>
+      <p>¿Registrar de todas formas? Debes escribir una observación.</p>
+      <label for="dup-obs">Observación (obligatoria)</label>
+      <textarea id="dup-obs" rows="3" maxlength="500" required></textarea>
+      <p id="dup-error" class="mensaje mensaje--error" role="alert" hidden>Escribe una observación.</p>
+      <div class="fila-botones">
+        <button type="button" id="dup-cancelar" class="boton boton--secundario">No registrar</button>
+        <button type="submit" id="dup-confirmar" class="boton boton--advertencia">Registrar igual</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="vendor/html5-qrcode.min.js"></script>
+  <script src="lib/logica.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
