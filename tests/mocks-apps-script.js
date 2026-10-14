@@ -30,6 +30,7 @@ class HojaFalsa {
   getRange(fila, col, nFilas = 1, nCols = 1) { return new RangoFalso(this, fila, col, nFilas, nCols); }
   setFrozenRows() { return this; }
   hideColumns(c) { this.columnasOcultas.push(c); return this; }
+  showColumns(c) { this.columnasOcultas = this.columnasOcultas.filter((x) => x !== c); return this; }
   celda(f, c) {
     const fila = this.datos[f - 1];
     return fila && fila[c - 1] !== undefined ? fila[c - 1] : '';
@@ -75,6 +76,8 @@ class RangoFalso {
         const r = [];
         for (let i = 0; i < rango.nFilas; i++) {
           for (let j = 0; j < rango.nCols; j++) {
+            // Peor caso: se asume que TextFinder NO encuentra celdas en columnas ocultas
+            if (rango.hoja.columnasOcultas.includes(rango.col + j)) continue;
             if (String(rango.hoja.celda(rango.fila + i, rango.col + j)) === texto) {
               r.push(new RangoFalso(rango.hoja, rango.fila + i, rango.col + j, 1, 1));
             }

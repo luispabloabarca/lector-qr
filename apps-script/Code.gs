@@ -36,6 +36,10 @@ var MAX_FALLOS = 5;
 var SEGUNDOS_BLOQUEO = 600; // 10 minutos
 var PREFIJO_SESION = 'sesion_';
 
+// IDs de lecturas recientes en caché (máximo que permite CacheService: 6 horas)
+var PREFIJO_ID = 'id_';
+var SEGUNDOS_CACHE_ID = 21600;
+
 // ======================================================================
 // Punto de entrada web
 // ======================================================================
@@ -150,8 +154,15 @@ function accionLectura_(datos) {
   try {
     var hoja = obtenerHoja_(HOJA_LECTURAS);
     var ultima = hoja.getLastRow();
+    var cache = CacheService.getScriptCache();
 
-    // (a) Mismo ID ya registrado (reintento): ok sin duplicar la fila
+    // (a) Mismo ID ya registrado (reintento): ok sin duplicar la fila.
+    // Primero en caché (cubre los reintentos tras un timeout) y luego en la hoja.
+    var enCache = cache.get(PREFIJO_ID + datos.id);
+    if (enCache) {
+      var guardada = JSON.parse(enCache);
+      return { ok: true, repetido: true, correlativo: guardada.c, usuario: guardada.u, fecha: guardada.f };
+    }
     if (ultima > 1) {
       var celdaId = hoja.getRange(2, COL_ID, ultima - 1, 1)
         .createTextFinder(datos.id).matchEntireCell(true).matchCase(true).findNext();
@@ -192,7 +203,9 @@ function accionLectura_(datos) {
       datos.id
     ]]);
     SpreadsheetApp.flush();
-    return { ok: true, correlativo: correlativo, usuario: sesion.usuario, fecha: formatearFecha_(ahora) };
+    var fecha = formatearFecha_(ahora);
+    cache.put(PREFIJO_ID + datos.id, JSON.stringify({ c: correlativo, u: sesion.usuario, f: fecha }), SEGUNDOS_CACHE_ID);
+    return { ok: true, correlativo: correlativo, usuario: sesion.usuario, fecha: fecha };
   } finally {
     lock.releaseLock();
   }
@@ -481,7 +494,9 @@ function configuracionInicial() {
   });
   lecturas.getRange(2, COL_CORRELATIVO, filas - 1, 1).setNumberFormat('0');
   lecturas.getRange(2, COL_FECHA, filas - 1, 1).setNumberFormat(FORMATO_FECHA);
-  lecturas.hideColumns(COL_ID);
+  // La columna ID queda VISIBLE: la búsqueda de IDs repetidos no debe depender
+  // de cómo trata TextFinder las columnas ocultas (si se ocultó en una versión anterior, se muestra)
+  lecturas.showColumns(COL_ID);
 
   SpreadsheetApp.getUi().alert('Configuración lista.\n\nAhora usa "Lector QR → Cargar usuarios" ' +
     'y luego implementa el script como aplicación web.');

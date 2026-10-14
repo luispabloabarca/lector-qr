@@ -192,6 +192,31 @@ test('un ID repetido responde ok sin duplicar la fila', () => {
   assert.equal(e.hojas.Lecturas.datos.length, 2);
 });
 
+test('reintento tras timeout con el mismo ID: ok aunque la columna ID esté oculta (caché)', () => {
+  const e = entornoConUsuarios();
+  e.hojas.Lecturas.hideColumns(8);
+  const { token } = login(e, 'User01', CLAVE_U1);
+  const id = crypto.randomUUID();
+  const r1 = lectura(e, token, { id });
+  const r2 = lectura(e, token, { id });
+  assert.equal(r2.ok, true, JSON.stringify(r2));
+  assert.equal(r2.repetido, true);
+  assert.equal(r2.correlativo, r1.correlativo);
+  assert.equal(r2.fecha, r1.fecha);
+  assert.equal(e.hojas.Lecturas.datos.length, 2);
+});
+
+test('un ID repetido se reconoce en la hoja aunque ya no esté en caché', () => {
+  const e = entornoConUsuarios();
+  const { token } = login(e, 'User01', CLAVE_U1);
+  const id = crypto.randomUUID();
+  lectura(e, token, { id });
+  e.cache.clear();
+  const r = lectura(e, token, { id });
+  assert.equal(r.repetido, true);
+  assert.equal(e.hojas.Lecturas.datos.length, 2);
+});
+
 test('misma lectura: DUPLICADO, luego exige observación y agrega fila nueva', () => {
   const e = entornoConUsuarios();
   const t1 = login(e, 'User01', CLAVE_U1).token;

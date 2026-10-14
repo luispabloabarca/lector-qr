@@ -49,7 +49,7 @@ Esto hace lo siguiente:
 - Crea las hojas **Usuarios** y **Lecturas** con sus encabezados.
 - Fija la zona horaria de la planilla en `America/Santiago`.
 - Da formato de texto a las columnas de datos, para conservar ceros a la izquierda y evitar fórmulas.
-- Oculta la columna **ID**.
+- Deja visible la columna **ID**, que es interna y sirve para no duplicar reintentos. No la borres ni la ocultes.
 - Guarda en las **propiedades del script** el ID de la hoja y un **pepper** aleatorio, el secreto que se usa para los hashes de las contraseñas.
 
 Se puede volver a ejecutar sin perder datos y **no cambia el pepper** si ya existe.
@@ -58,7 +58,7 @@ Se puede volver a ejecutar sin perder datos y **no cambia el pepper** si ya exis
 
 La hoja **Lecturas** queda con estas columnas:
 
-| Correlativo | N° pedido | Código producto | N° pallet | Usuario | Fecha y hora | Observación | ID (oculta) |
+| Correlativo | N° pedido | Código producto | N° pallet | Usuario | Fecha y hora | Observación | ID (interna) |
 |---|---|---|---|---|---|---|---|
 
 ## 3. Crear los usuarios

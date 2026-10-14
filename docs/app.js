@@ -8,9 +8,13 @@
   'use strict';
 
   var L = window.Logica;
-  var TIMEOUT_MS = 15000;
+  // Apps Script puede tardar bastante en "despertar" (arranque en frío): se espera hasta 30 s
+  var TIMEOUT_MS = 30000;
   var MAX_ULTIMAS = 10;
-  var CLAVES = { url: 'lqr_url', usuario: 'lqr_usuario', token: 'lqr_token', rol: 'lqr_rol', ultimas: 'lqr_ultimas' };
+  var CLAVES = {
+    url: 'lqr_url', usuario: 'lqr_usuario', token: 'lqr_token', rol: 'lqr_rol',
+    ultimas: 'lqr_ultimas', reintento: 'lqr_reintento'
+  };
 
   var MENSAJES = {
     CREDENCIALES: 'Usuario o contraseña incorrectos.',
@@ -58,12 +62,23 @@
   var estado = {
     ocupado: false,
     esRepetida: L.crearAntiDobleLectura(3000),
-    // Última lectura que falló por red: si se reintenta la misma, se reutiliza su ID
-    reintento: null,
     lector: null,
     camaraActiva: false,
     linterna: false
   };
+
+  /*
+   * Última lectura sin confirmar (timeout o falla de red): { clave, id }.
+   * Se guarda en el dispositivo para que, aunque se cierre la app, el reintento
+   * de la misma lectura use el mismo ID y el servidor no la duplique.
+   * No es una cola: no guarda lecturas para enviarlas después.
+   */
+  function leerReintento() {
+    try { return JSON.parse(leer(CLAVES.reintento) || 'null'); } catch (e) { return null; }
+  }
+  function guardarReintento(valor) {
+    if (valor) guardar(CLAVES.reintento, JSON.stringify(valor)); else borrar(CLAVES.reintento);
+  }
 
   // ======================================================================
   // Comunicación con el servidor
@@ -185,7 +200,10 @@
         return;
       }
       // Si entra otra persona en este celular, no se muestran las lecturas del anterior
-      if ((leer(CLAVES.usuario) || '').toLowerCase() !== String(r.usuario).toLowerCase()) borrar(CLAVES.ultimas);
+      if ((leer(CLAVES.usuario) || '').toLowerCase() !== String(r.usuario).toLowerCase()) {
+        borrar(CLAVES.ultimas);
+        borrar(CLAVES.reintento);
+      }
       guardar(CLAVES.usuario, r.usuario);
       guardar(CLAVES.token, r.token);
       guardar(CLAVES.rol, r.rol === 'ADMIN' ? 'ADMIN' : 'USUARIO');
@@ -198,8 +216,7 @@
   function cerrarSesion() {
     var token = leer(CLAVES.token);
     if (token && navigator.onLine) llamarServidor('logout', { token: token });
-    [CLAVES.url, CLAVES.usuario, CLAVES.token, CLAVES.rol, CLAVES.ultimas].forEach(borrar);
-    estado.reintento = null;
+    [CLAVES.url, CLAVES.usuario, CLAVES.token, CLAVES.rol, CLAVES.ultimas, CLAVES.reintento].forEach(borrar);
     el.observacionRapida.value = '';
     mostrarAcceso('');
   }
@@ -395,7 +412,8 @@
     estado.ocupado = true;
     pausarLector();
     var clave = L.claveLectura(campos);
-    var id = estado.reintento && estado.reintento.clave === clave ? estado.reintento.id : L.generarUuid();
+    var pendiente = leerReintento();
+    var id = pendiente && pendiente.clave === clave ? pendiente.id : L.generarUuid();
     var descripcion = campos.pedido + ' · ' + campos.producto + ' · Pallet ' + campos.pallet;
     mostrarResultado('enviando', 'Enviando… ' + descripcion);
 
@@ -411,9 +429,9 @@
         mostrarResultado('advertencia', 'Ya registrado: ' + descripcion);
         return preguntarDuplicado(r.previo, observacion).then(function (obsConfirmada) {
           if (obsConfirmada === null) {
-            agregarUltima(campos, 'descartado', null);
+            agregarUltima(campos, 'descartado', null, id);
             mostrarResultado('advertencia', 'No registrado (duplicado descartado): ' + descripcion);
-            estado.reintento = null;
+            guardarReintento(null);
             return false;
           }
           mostrarResultado('enviando', 'Enviando… ' + descripcion);
@@ -434,10 +452,11 @@
 
   function procesarRespuesta(r, campos, id, descripcion, estadoOk) {
     if (r.ok) {
-      estado.reintento = null;
+      guardarReintento(null);
       retroalimentar('ok');
-      mostrarResultado('ok', 'Registrado N° ' + r.correlativo + ': ' + descripcion);
-      agregarUltima(campos, estadoOk, r.correlativo);
+      mostrarResultado('ok', 'Registrado N° ' + r.correlativo + ': ' + descripcion +
+        (r.repetido ? ' (ya estaba guardada; no se duplicó)' : ''));
+      agregarUltima(campos, estadoOk, r.correlativo, id);
       return true;
     }
     if (r.error === 'SESION') {
@@ -445,15 +464,14 @@
       sesionExpirada();
       return false;
     }
-    if (r.error === 'RED' || r.error === 'TIEMPO' || r.error === 'OCUPADO' || r.error === 'INTERNO' || r.error === 'RESPUESTA_INVALIDA') {
-      // Puede que el servidor sí la haya guardado: el reintento usa el mismo ID y no duplica
-      estado.reintento = { clave: L.claveLectura(campos), id: id };
-    } else {
-      estado.reintento = null;
-    }
+    // Sin respuesta clara: puede que el servidor SÍ la haya guardado.
+    // Se marca "Sin confirmar" y el reintento usará el mismo ID para no duplicar.
+    var incierto = r.error === 'RED' || r.error === 'TIEMPO' || r.error === 'OCUPADO' ||
+      r.error === 'INTERNO' || r.error === 'RESPUESTA_INVALIDA';
+    guardarReintento(incierto ? { clave: L.claveLectura(campos), id: id } : null);
     retroalimentar('error');
     mostrarResultado('error', mensajeDe(r.error));
-    agregarUltima(campos, 'error', null);
+    agregarUltima(campos, incierto ? 'sinConfirmar' : 'error', null, id);
     return false;
   }
 
@@ -463,7 +481,10 @@
       var p = previo || {};
       el.dupTexto.textContent = 'Este pallet ya fue registrado' +
         (p.usuario ? ' por ' + p.usuario : '') + (p.fecha ? ' el ' + p.fecha : '') +
-        (p.correlativo ? ' (N° ' + p.correlativo + ')' : '') + '.';
+        (p.correlativo ? ' (N° ' + p.correlativo + ')' : '') + '.' +
+        (p.usuario && String(p.usuario).toLowerCase() === (leer(CLAVES.usuario) || '').toLowerCase()
+          ? ' Lo registraste tú: si es una lectura anterior que quedó "sin confirmar", ya está guardada y no necesitas registrarla de nuevo.'
+          : '');
       el.dupObs.value = observacionInicial || '';
       el.dupError.hidden = true;
 
@@ -508,9 +529,11 @@
     }
   }
 
-  function agregarUltima(campos, estadoLectura, correlativo) {
-    var lista = leerUltimas();
+  /** Agrega una lectura a la lista; si ya había una con el mismo ID (reintento), la reemplaza. */
+  function agregarUltima(campos, estadoLectura, correlativo, id) {
+    var lista = leerUltimas().filter(function (l) { return !id || l.id !== id; });
     lista.unshift({
+      id: id,
       hora: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       pedido: campos.pedido, producto: campos.producto, pallet: campos.pallet,
       estado: estadoLectura, correlativo: correlativo
@@ -521,7 +544,8 @@
 
   var TEXTO_ESTADO = {
     registrado: 'Registrado', duplicado: 'Registrado (duplicado)',
-    descartado: 'No registrado', error: 'Error'
+    descartado: 'No registrado', error: 'Error',
+    sinConfirmar: 'Sin confirmar: reintentar'
   };
 
   function renderUltimas() {

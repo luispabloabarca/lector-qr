@@ -9,7 +9,7 @@
  */
 'use strict';
 
-var VERSION = 'lector-qr-v1';
+var VERSION = 'lector-qr-v2';
 var ARCHIVOS = [
   './',
   './index.html',

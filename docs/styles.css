@@ -165,7 +165,7 @@ details.tarjeta summary { min-height: 44px; display: flex; align-items: center; 
 .lista-ultimas .hora { color: var(--texto-suave); }
 .estado { font-weight: 700; text-align: right; }
 .estado--registrado { color: var(--ok); }
-.estado--duplicado { color: var(--advertencia); }
+.estado--duplicado, .estado--sinConfirmar { color: var(--advertencia); }
 .estado--descartado, .estado--error { color: var(--error); }
 
 table.resumen { width: 100%; border-collapse: collapse; font-size: 16px; }
